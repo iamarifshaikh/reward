@@ -1,0 +1,77 @@
+spring:
+  application:
+    name: reward
+  # Local secrets live in .env (gitignored, key=value, same as any other framework).
+  # "optional:" means the app still starts without it, which is how staging and prod run:
+  # there the same keys arrive as real environment variables.
+  config:
+    import: optional:file:.env[.properties]
+  threads:
+    virtual:
+      enabled: true
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/intiq}
+    username: ${DB_USERNAME:intiq}
+    password: ${DB_PASSWORD:intiq}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+    placeholders:
+      # Substituted into V2026_09_24_1000__seed_platform_admin.sql at migration time.
+      platformAdminEmail: ${PLATFORM_ADMIN_EMAIL:shaikharif6190@gmail.com}
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail.smtp.auth: ${MAIL_AUTH:false}
+      mail.smtp.starttls.enable: ${MAIL_STARTTLS:false}
+
+# Swapping a provider is a property change only. No code changes, no redeploy of other modules.
+intiq:
+  security:
+    pii:
+      # base64 of 32 random bytes. Dev value only; production comes from Secrets Manager.
+      key: ${PII_KEY:}
+  cors:
+    allowed-origins: ${CORS_ORIGINS:http://localhost:5173,http://localhost:3000}
+  auth:
+    cookie:
+      name: intiq_rt
+      secure: ${COOKIE_SECURE:false}   # true everywhere except plain-http localhost
+      same-site: Strict
+      path: /api/v1/auth
+  jwt:
+    issuer: ${JWT_ISSUER:https://api.intiqrewards.in}
+    # Short lived because an access token cannot be revoked once issued.
+    access-ttl: 15m
+    refresh-ttl: 30d
+    # Blank in development: an ephemeral key pair is generated at startup.
+    private-key: ${JWT_PRIVATE_KEY:}
+    public-key: ${JWT_PUBLIC_KEY:}
+  otp:
+    code-length: 6
+    ttl: 5m
+    max-attempts: 5
+    resend-cooldown: 30s
+    max-per-destination: 3
+    rate-window: 10m
+    max-per-ip: 20
+    ip-rate-window: 1h
+    pepper: ${OTP_PEPPER:}
+  messaging:
+    sms:
+      provider: ${SMS_PROVIDER:log}          # log | msg91
+      msg91:
+        base-url: ${MSG91_BASE_URL:https://control.msg91.com}
+        auth-key: ${MSG91_AUTH_KEY:}
+        sender-id: ${MSG91_SENDER_ID:}
+        template-ids:
+          OTP_LOGIN: ${MSG91_TEMPLATE_OTP_LOGIN:}
+    email:
+      provider: ${EMAIL_PROVIDER:smtp}       # smtp | log
+      from: ${EMAIL_FROM:no-reply@intiqrewards.in}

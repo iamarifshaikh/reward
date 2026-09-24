@@ -1,0 +1,6 @@
+plugins {
+	// Lets Gradle download the JDK defined by the java toolchain automatically
+	id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
+}
+
+rootProject.name = 'reward'
