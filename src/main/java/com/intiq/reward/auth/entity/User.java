@@ -20,7 +20,9 @@ import java.util.UUID;
 /**
  * Every login on the platform: one per business, plus every consumer.
  * {@code orgId} set means this login acts for that business; null means a consumer.
- * The same row can be both when a business owner is also enrolled as a consumer.
+ * A phone or email identifies exactly one of these, never both — see {@code ux_users__phone} /
+ * {@code ux_users__email}. Someone who is both a shop owner and a shopper needs two different
+ * contacts, one per identity.
  */
 @Entity
 @Table(name = "users")
@@ -95,17 +97,6 @@ public class User extends AuditableEntity {
         return user;
     }
 
-    /**
-     * An existing login (often a business owner) now also shops as a consumer.
-     * Keeps the first enrolling store, and never touches the business side of the row.
-     */
-    public void enrollAsConsumer(UUID retailerOrgId, Instant now) {
-        if (consumerEnrolledAt == null) {
-            consumerEnrolledAt = now;
-            enrolledByOrgId = retailerOrgId;
-        }
-    }
-
     public void updateConsumerProfile(String fullName, Gender gender, String city, String pincode) {
         this.fullName = fullName;
         this.gender = gender;
@@ -122,6 +113,14 @@ public class User extends AuditableEntity {
             throw new IllegalStateException("Contact can only be corrected while the login is unverified");
         }
         setContact(phone, email);
+    }
+
+    /** Same "only before anyone's proven ownership" rule as {@link #correctContact}. */
+    public void rename(String fullName) {
+        if (status != UserStatus.UNVERIFIED) {
+            throw new IllegalStateException("Name can only be corrected while the login is unverified");
+        }
+        this.fullName = fullName;
     }
 
     public void verifyPhone(Instant now) {

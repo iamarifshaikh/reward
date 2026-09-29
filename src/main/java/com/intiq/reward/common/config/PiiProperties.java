@@ -8,5 +8,4 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *            long lived and guard it accordingly.
  */
 @ConfigurationProperties(prefix = "intiq.security.pii")
-public record PiiProperties(String key) {
-}
+public record PiiProperties(String key) {}

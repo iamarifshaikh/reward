@@ -109,6 +109,22 @@ public class Organization extends AuditableEntity {
         this.approvedAt = now;
     }
 
+    /** A business that never made it past review. Distinct from {@link #close}, which ends one that did. */
+    public void reject() {
+        if (status != OrgStatus.PENDING_APPROVAL) {
+            throw new IllegalStateException("Only a pending organization can be rejected");
+        }
+        this.status = OrgStatus.REJECTED;
+    }
+
+    /** A rejected organization can be corrected and put back in front of an admin. */
+    public void resubmit() {
+        if (status != OrgStatus.REJECTED) {
+            throw new IllegalStateException("Only a rejected organization can be resubmitted");
+        }
+        this.status = OrgStatus.PENDING_APPROVAL;
+    }
+
     public void suspend() {
         if (status != OrgStatus.ACTIVE) {
             throw new IllegalStateException("Only an active organization can be suspended");

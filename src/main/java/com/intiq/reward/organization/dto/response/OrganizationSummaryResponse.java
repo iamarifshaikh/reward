@@ -6,11 +6,14 @@ import com.intiq.reward.organization.enums.OrgType;
 
 import java.util.UUID;
 
-/** Row shape for list screens: no PAN and no contact, so lists stay cheap and leak nothing. */
+/** Row shape for list screens: no PAN, but the owner's name/phone/email so an admin can review it. */
 public record OrganizationSummaryResponse(UUID id,
                                           String code,
                                           OrgType orgType,
                                           String displayName,
                                           OrgStatus status,
-                                          KycStatus kycStatus) {
+                                          KycStatus kycStatus,
+                                          String ownerName,
+                                          String ownerPhone,
+                                          String ownerEmail) {
 }

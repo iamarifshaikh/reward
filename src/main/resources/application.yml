@@ -1,3 +1,7 @@
+server:
+  # Override with SERVER_PORT if 8080 is already taken on your machine.
+  port: ${SERVER_PORT:8080}
+
 spring:
   application:
     name: reward
@@ -22,6 +26,7 @@ spring:
     placeholders:
       # Substituted into V2026_09_24_1000__seed_platform_admin.sql at migration time.
       platformAdminEmail: ${PLATFORM_ADMIN_EMAIL:shaikharif6190@gmail.com}
+      platformAdminPhone: ${PLATFORM_ADMIN_PHONE:+919969763214}
   mail:
     host: ${MAIL_HOST:localhost}
     port: ${MAIL_PORT:1025}
@@ -64,14 +69,33 @@ intiq:
     ip-rate-window: 1h
     pepper: ${OTP_PEPPER:}
   messaging:
-    sms:
-      provider: ${SMS_PROVIDER:log}          # log | msg91
-      msg91:
-        base-url: ${MSG91_BASE_URL:https://control.msg91.com}
-        auth-key: ${MSG91_AUTH_KEY:}
-        sender-id: ${MSG91_SENDER_ID:}
-        template-ids:
-          OTP_LOGIN: ${MSG91_TEMPLATE_OTP_LOGIN:}
-    email:
-      provider: ${EMAIL_PROVIDER:smtp}       # smtp | log
+    # Which provider serves each channel, and what to try if it fails.
+    # Email: SES primary, SMTP fallback (a second, independent delivery path if SES is down or unverified).
+    # SMS / WhatsApp: MSG91. SMS has no fallback provider on purpose — see .env.example for why.
+    channels:
+      email:    { provider: "${EMAIL_PROVIDER:log}", fallback-provider: "${EMAIL_FALLBACK:}" }
+      sms:      { provider: "${SMS_PROVIDER:log}", fallback-provider: "${SMS_FALLBACK:}" }
+      whatsapp: { provider: "${WHATSAPP_PROVIDER:log}", fallback-channel: "${WHATSAPP_FALLBACK_CHANNEL:}" }
+    # AWS SES: the email provider. No access key/secret here — the AWS SDK resolves those itself.
+    ses:
+      region: ${AWS_SES_REGION:ap-south-1}
+      from-email: ${SES_FROM_EMAIL:no-reply@intiqrewards.in}
+      from-name: ${SES_FROM_NAME:INTIQ Rewards}
+    # SMTP: the email fallback only, for when SES is unreachable or not yet verified.
+    smtp:
       from: ${EMAIL_FROM:no-reply@intiqrewards.in}
+    # MSG91: SMS and WhatsApp. One account, one auth key, shared across both.
+    msg91:
+      base-url: ${MSG91_BASE_URL:https://control.msg91.com}
+      auth-key: ${MSG91_AUTH_KEY:}
+      sms:
+        sender-id: ${MSG91_SENDER_ID:}
+      whatsapp:
+        integrated-number: ${MSG91_WA_NUMBER:}
+        language-code: ${MSG91_WA_LANGUAGE:en}
+      # Our template code mapped to MSG91's template id, per channel.
+      templates:
+        SMS:
+          OTP_LOGIN: ${MSG91_SMS_TEMPLATE_OTP_LOGIN:}
+        WHATSAPP:
+          OTP_LOGIN: ${MSG91_WA_TEMPLATE_OTP_LOGIN:}

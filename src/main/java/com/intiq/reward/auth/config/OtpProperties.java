@@ -17,13 +17,4 @@ import java.time.Duration;
  *                              does not let anyone brute-force six digits offline
  */
 @ConfigurationProperties(prefix = "intiq.otp")
-public record OtpProperties(int codeLength,
-                            Duration ttl,
-                            int maxAttempts,
-                            Duration resendCooldown,
-                            int maxPerDestination,
-                            Duration rateWindow,
-                            int maxPerIp,
-                            Duration ipRateWindow,
-                            String pepper) {
-}
+public record OtpProperties(int codeLength,Duration ttl,int maxAttempts,Duration resendCooldown,int maxPerDestination,Duration rateWindow,int maxPerIp,Duration ipRateWindow,String pepper) {}

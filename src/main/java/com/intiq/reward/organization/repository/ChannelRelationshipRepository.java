@@ -7,7 +7,10 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -37,4 +40,22 @@ public interface ChannelRelationshipRepository extends JpaRepository<ChannelRela
     List<ChannelRelationship> findByParentOrgIdAndStatus(UUID parentOrgId, ChannelStatus status);
 
     long countByBrandOrgIdAndStatus(UUID brandOrgId, ChannelStatus status);
+
+    /**
+     * Distributor and retailer counts for every brand in one query, instead of two count queries
+     * per brand — a 20-brand list page costs one extra query total, not forty.
+     */
+    @Query("select c.brandOrgId as brandOrgId, c.partnerType as partnerType, count(c) as total "
+            + "from ChannelRelationship c "
+            + "where c.brandOrgId in :brandOrgIds and c.status = :status "
+            + "group by c.brandOrgId, c.partnerType")
+    List<PartnerCountRow> countPartnersByBrandIds(@Param("brandOrgIds") Collection<UUID> brandOrgIds,
+                                                  @Param("status") ChannelStatus status);
+
+    /** One row of the grouped count above: how many of one partner type one brand has. */
+    interface PartnerCountRow {
+        UUID getBrandOrgId();
+        PartnerType getPartnerType();
+        long getTotal();
+    }
 }

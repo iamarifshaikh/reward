@@ -33,6 +33,9 @@ dependencies {
 
 	// --- messaging ---
 	implementation 'org.springframework.boot:spring-boot-starter-mail'
+	// Email delivery via AWS SES. Credentials resolve through the SDK's default chain
+	// (env vars, ~/.aws/credentials, or the instance/task role in AWS) — we never store them ourselves.
+	implementation 'software.amazon.awssdk:ses:2.35.10'
 
 	// --- docs ---
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.0'

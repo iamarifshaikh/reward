@@ -13,9 +13,4 @@ import java.time.Duration;
  * @param publicKey  base64 X.509 RSA public key, the pair of the above
  */
 @ConfigurationProperties(prefix = "intiq.jwt")
-public record JwtProperties(String issuer,
-                            Duration accessTtl,
-                            Duration refreshTtl,
-                            String privateKey,
-                            String publicKey) {
-}
+public record JwtProperties(String issuer,Duration accessTtl,Duration refreshTtl,String privateKey,String publicKey) {}

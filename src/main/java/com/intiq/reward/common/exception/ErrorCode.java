@@ -23,11 +23,12 @@ public enum ErrorCode {
     AUTH_OTP_INVALID(HttpStatus.BAD_REQUEST, "Incorrect code"),
     AUTH_OTP_ATTEMPTS_EXCEEDED(HttpStatus.BAD_REQUEST, "Too many incorrect attempts, request a new code"),
     AUTH_OTP_COOLDOWN(HttpStatus.TOO_MANY_REQUESTS, "A code was just sent, wait before requesting another"),
+    AUTH_OTP_PROVIDER_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "Could not reach the SMS provider, try again shortly"),
+    AUTH_OTP_PROVIDER_REJECTED(HttpStatus.BAD_GATEWAY, "The SMS provider rejected the request"),
     AUTH_UNAUTHENTICATED(HttpStatus.UNAUTHORIZED, "Sign in to continue"),
     AUTH_TOKEN_INVALID(HttpStatus.UNAUTHORIZED, "Session is no longer valid"),
     AUTH_TOKEN_REUSED(HttpStatus.UNAUTHORIZED, "Session ended for security reasons"),
     AUTH_USER_BLOCKED(HttpStatus.FORBIDDEN, "This account is blocked"),
-    AUTH_CONTEXT_INVALID(HttpStatus.BAD_REQUEST, "You cannot act in that context"),
 
     // users
     USER_CONTACT_REQUIRED(HttpStatus.BAD_REQUEST, "A phone number or an email is required"),

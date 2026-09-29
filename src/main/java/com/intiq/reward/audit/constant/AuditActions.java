@@ -13,6 +13,11 @@ public final class AuditActions {
     public static final String LOGOUT = "LOGOUT";
     public static final String TOKEN_REUSE_DETECTED = "TOKEN_REUSE_DETECTED";
 
+    /** MSG91's raw answer for one SendOTP call, independent of what we decided from it. */
+    public static final String SMS_OTP_PROVIDER_SEND = "SMS_OTP_PROVIDER_SEND";
+    /** MSG91's raw answer for one Verify OTP call. */
+    public static final String SMS_OTP_PROVIDER_VERIFY = "SMS_OTP_PROVIDER_VERIFY";
+
     // users
     public static final String USER_CREATED = "USER_CREATED";
     public static final String USER_CONTACT_CORRECTED = "USER_CONTACT_CORRECTED";
@@ -25,6 +30,8 @@ public final class AuditActions {
     public static final String ORG_CREATED = "ORG_CREATED";
     public static final String ORG_UPDATED = "ORG_UPDATED";
     public static final String ORG_APPROVED = "ORG_APPROVED";
+    public static final String ORG_REJECTED = "ORG_REJECTED";
+    public static final String ORG_RESUBMITTED = "ORG_RESUBMITTED";
     public static final String ORG_SUSPENDED = "ORG_SUSPENDED";
     public static final String ORG_REACTIVATED = "ORG_REACTIVATED";
     public static final String ORG_CLOSED = "ORG_CLOSED";

@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -24,6 +25,9 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     Optional<User> findByPhoneOrEmail(@Param("destination") String destination);
 
     List<User> findByOrgId(UUID orgId);
+
+    /** Batched lookup for list screens, such as the admin approval queue showing owner contacts. */
+    List<User> findByOrgIdIn(Collection<UUID> orgIds);
 
     /** Enforces one login per business (§1.1); the platform organisation is allowed more. */
     long countByOrgId(UUID orgId);

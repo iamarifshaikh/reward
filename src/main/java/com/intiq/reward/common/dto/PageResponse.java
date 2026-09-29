@@ -9,11 +9,7 @@ import java.util.function.Function;
  * Envelope for every list endpoint. Spring's own Page serialises with unstable internals, so we
  * expose a fixed shape the frontend can rely on.
  */
-public record PageResponse<T>(List<T> items,
-                              int page,
-                              int size,
-                              long totalItems,
-                              int totalPages) {
+public record PageResponse<T>(List<T> items,int page,int size,long totalItems,int totalPages) {
 
     public static <T> PageResponse<T> of(Page<T> page) {
         return new PageResponse<>(page.getContent(),

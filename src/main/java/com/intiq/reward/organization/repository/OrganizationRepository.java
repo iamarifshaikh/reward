@@ -32,6 +32,9 @@ public interface OrganizationRepository extends JpaRepository<Organization, UUID
 
     Page<Organization> findByOrgTypeAndStatus(OrgType orgType, OrgStatus status, Pageable pageable);
 
+    /** The admin brand list shows every status side by side (active, pending, suspended). */
+    Page<Organization> findByOrgType(OrgType orgType, Pageable pageable);
+
     /** Admin KYC queue. Backed by the partial index on kyc_status = 'SUBMITTED'. */
     Page<Organization> findByKycStatus(KycStatus kycStatus, Pageable pageable);
 

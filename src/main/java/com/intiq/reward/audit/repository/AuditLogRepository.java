@@ -19,9 +19,7 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, Long>,
     Page<AuditLog> findByScopeOrgIdOrderByOccurredAtDesc(UUID scopeOrgId, Pageable pageable);
 
     /** The history of one record, shown on its detail screen. */
-    Page<AuditLog> findByEntityTypeAndEntityIdOrderByOccurredAtDesc(String entityType,
-                                                                    UUID entityId,
-                                                                    Pageable pageable);
+    Page<AuditLog> findByEntityTypeAndEntityIdOrderByOccurredAtDesc(String entityType,UUID entityId,Pageable pageable);
 
     Page<AuditLog> findByActorUserIdOrderByOccurredAtDesc(UUID actorUserId, Pageable pageable);
 }

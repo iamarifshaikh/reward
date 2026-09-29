@@ -9,10 +9,9 @@ import com.intiq.reward.common.exception.DomainException;
 import com.intiq.reward.common.exception.ErrorCode;
 import com.intiq.reward.common.util.Hashes;
 import com.intiq.reward.common.util.Masking;
-import com.intiq.reward.messaging.provider.EmailRequest;
-import com.intiq.reward.messaging.provider.EmailSender;
-import com.intiq.reward.messaging.provider.SmsRequest;
-import com.intiq.reward.messaging.provider.SmsSender;
+import com.intiq.reward.messaging.Channel;
+import com.intiq.reward.messaging.MessageDispatcher;
+import com.intiq.reward.messaging.MessageRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -24,23 +23,25 @@ import java.time.Instant;
 import java.util.Map;
 
 /**
- * Owns everything about one-time codes: generation, storage, rate limiting, delivery and
- * verification. Kept apart from {@link AuthService} because these rules are security critical,
- * self-contained and heavily tested.
+ * Email OTP, generated, stored and verified entirely by us — unlike {@link SmsOtpService}, where
+ * MSG91 owns the whole lifecycle. AWS SES only delivers the text; nothing about the code's state
+ * lives outside this service and {@code otp_challenges}.
  *
  * <p>The code itself is never stored. Only an HMAC of it is, keyed with a server-side pepper.
+ *
+ * <p>{@code otp_challenges.channel} is now always {@code EMAIL} — it is kept in the schema rather
+ * than dropped, since removing it buys nothing and a column is cheap to leave in place.
  */
 @Service
 @RequiredArgsConstructor
 @Slf4j
-public class OtpService {
+public class EmailOtpService {
 
-    private static final String SMS_TEMPLATE_LOGIN = "OTP_LOGIN";
+    private static final String TEMPLATE_LOGIN = "OTP_LOGIN";
 
     private final OtpChallengeRepository otpChallengeRepository;
     private final OtpProperties properties;
-    private final SmsSender smsSender;
-    private final EmailSender emailSender;
+    private final MessageDispatcher messageDispatcher;
     private final Clock clock;
     private final SecureRandom random = new SecureRandom();
 
@@ -49,17 +50,17 @@ public class OtpService {
      * so this returns the same result either way.
      */
     @Transactional
-    public OtpIssueResult issue(OtpChannel channel, String destination, OtpPurpose purpose, String requestIp) {
+    public OtpIssueResult issue(String destination, OtpPurpose purpose, String requestIp) {
         Instant now = clock.instant();
         enforceRateLimits(destination, requestIp, now);
 
         String code = generateCode();
         OtpChallenge challenge = OtpChallenge.issue(
-                channel, destination, purpose, hash(destination, purpose, code), now, properties.ttl(), requestIp);
+                OtpChannel.EMAIL, destination, purpose, hash(destination, purpose, code), now, properties.ttl(), requestIp);
         otpChallengeRepository.save(challenge);
 
-        deliver(channel, destination, code);
-        log.info("OTP issued channel={} destination={}", channel, mask(channel, destination));
+        deliver(destination, code);
+        log.info("Email OTP issued destination={}", mask(destination));
 
         return new OtpIssueResult((int) properties.ttl().toSeconds(),
                 (int) properties.resendCooldown().toSeconds());
@@ -70,7 +71,7 @@ public class OtpService {
      * A wrong code counts an attempt; a correct one consumes the challenge so it cannot be replayed.
      */
     @Transactional
-    public void verify(OtpChannel channel, String destination, OtpPurpose purpose, String code) {
+    public void verify(String destination, OtpPurpose purpose, String code) {
         Instant now = clock.instant();
         OtpChallenge challenge = otpChallengeRepository
                 .findFirstByDestinationAndPurposeOrderByCreatedAtDesc(destination, purpose)
@@ -81,9 +82,6 @@ public class OtpService {
         }
         if (challenge.getAttempts() >= properties.maxAttempts()) {
             throw new DomainException(ErrorCode.AUTH_OTP_ATTEMPTS_EXCEEDED);
-        }
-        if (challenge.getChannel() != channel) {
-            throw new DomainException(ErrorCode.AUTH_OTP_INVALID);
         }
 
         if (!Hashes.constantTimeEquals(challenge.getCodeHash(), hash(destination, purpose, code))) {
@@ -120,15 +118,18 @@ public class OtpService {
         }
     }
 
-    private void deliver(OtpChannel channel, String destination, String code) {
+    private void deliver(String destination, String code) {
         String text = "Your INTIQ Rewards code is " + code + ". It is valid for "
                 + properties.ttl().toMinutes() + " minutes. Do not share it with anyone.";
 
-        if (channel == OtpChannel.SMS) {
-            smsSender.send(SmsRequest.of(destination, SMS_TEMPLATE_LOGIN, Map.of("otp", code), text));
-        } else {
-            emailSender.send(EmailRequest.of(destination, "Your INTIQ Rewards login code", text));
-        }
+        messageDispatcher.send(MessageRequest.of(
+                Channel.EMAIL,
+                destination,
+                null,
+                TEMPLATE_LOGIN,
+                Map.of("OTP", code),
+                "Your INTIQ Rewards login code",
+                text));
     }
 
     /**
@@ -144,11 +145,7 @@ public class OtpService {
         return String.format("%0" + properties.codeLength() + "d", random.nextInt(bound));
     }
 
-    private String mask(OtpChannel channel, String destination) {
-        return channel == OtpChannel.SMS ? Masking.phone(destination) : Masking.email(destination);
-    }
-
-    /** What the client needs to render the "resend in 30s" countdown, and nothing more. */
-    public record OtpIssueResult(int expiresInSeconds, int retryAfterSeconds) {
+    private String mask(String destination) {
+        return Masking.email(destination);
     }
 }

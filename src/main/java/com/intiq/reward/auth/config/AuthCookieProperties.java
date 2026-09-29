@@ -9,5 +9,4 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param path     scoped to the auth endpoints, so the cookie is not sent with ordinary API calls
  */
 @ConfigurationProperties(prefix = "intiq.auth.cookie")
-public record AuthCookieProperties(String name, boolean secure, String sameSite, String path) {
-}
+public record AuthCookieProperties(String name, boolean secure, String sameSite, String path) {}

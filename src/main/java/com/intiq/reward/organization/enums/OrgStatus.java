@@ -7,5 +7,6 @@ public enum OrgStatus {
     PENDING_APPROVAL,
     ACTIVE,
     SUSPENDED,
-    CLOSED
+    CLOSED,
+    REJECTED
 }

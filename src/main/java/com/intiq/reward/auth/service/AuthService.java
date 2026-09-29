@@ -23,15 +23,18 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 /**
- * The login flow, start to finish. Holds no rules of its own: it sequences {@link OtpService},
- * {@link TokenService} and {@link JwtIssuer}, and decides which contexts a login may act in.
+ * The login flow, start to finish. Holds no OTP rules of its own: it routes to
+ * {@link EmailOtpService} or {@link SmsOtpService} by channel — the two own completely different
+ * state (we hold the code for email, MSG91 holds it for SMS), so nothing here needs to know which.
+ *
+ * <p>A login has exactly one identity: a business (when {@code orgId} is set) or a consumer, never
+ * both, so there is nothing to choose between at login time. {@link #resolveContext} derives that
+ * one identity from the user record alone.
  */
 @Service
 @RequiredArgsConstructor
@@ -39,7 +42,8 @@ import java.util.UUID;
 public class AuthService {
 
     private final UserRepository userRepository;
-    private final OtpService otpService;
+    private final EmailOtpService emailOtpService;
+    private final SmsOtpService smsOtpService;
     private final TokenService tokenService;
     private final JwtIssuer jwtIssuer;
     private final OrgDirectoryService orgDirectory;
@@ -53,17 +57,20 @@ public class AuthService {
      * endpoint into a way of discovering which phone numbers are registered on the platform.
      */
     @Transactional
-    public OtpService.OtpIssueResult requestOtp(OtpChannel channel, String rawDestination, String ip) {
+    public OtpIssueResult requestOtp(OtpChannel channel, String rawDestination, String ip) {
         String destination = normalize(channel, rawDestination);
         Optional<User> user = userRepository.findByPhoneOrEmail(destination);
 
         if (user.isEmpty() || user.get().getStatus() == UserStatus.BLOCKED) {
             log.info("OTP requested for unknown or blocked contact: {}", mask(channel, destination));
-            return new OtpService.OtpIssueResult(0, 0);
+            return new OtpIssueResult(0, 0);
         }
 
-        OtpService.OtpIssueResult result = otpService.issue(channel, destination, OtpPurpose.LOGIN, ip);
-        auditService.recordAs(user.get().getId(), user.get().getOrgId(), null,
+        OtpIssueResult result = channel == OtpChannel.SMS
+                ? smsOtpService.issue(destination, ip)
+                : emailOtpService.issue(destination, OtpPurpose.LOGIN, ip);
+
+        auditService.recordAs(user.get().getId(), user.get().getOrgId(), actorTypeFor(user.get()),
                 AuditActions.OTP_REQUESTED, AuditActions.ENTITY_USER, user.get().getId(),
                 user.get().getOrgId(), Map.of("channel", channel.name()), ip);
         return result;
@@ -78,7 +85,11 @@ public class AuthService {
         String destination = normalize(channel, rawDestination);
 
         try {
-            otpService.verify(channel, destination, OtpPurpose.LOGIN, code);
+            if (channel == OtpChannel.SMS) {
+                smsOtpService.verify(destination, code);
+            } else {
+                emailOtpService.verify(destination, OtpPurpose.LOGIN, code);
+            }
         } catch (DomainException e) {
             auditService.recordAnonymous(AuditActions.LOGIN_FAILED, AuditActions.ENTITY_USER, null,
                     Map.of("destination", mask(channel, destination), "reason", e.errorCode().name()), ip);
@@ -99,40 +110,13 @@ public class AuthService {
         }
         user.recordLogin(now);
 
-        List<Context> contexts = availableContexts(user);
-        if (contexts.isEmpty()) {
-            throw new DomainException(ErrorCode.ORG_NOT_ACTIVE);
-        }
+        Context context = resolveContext(user);
+        LoginResult result = openSession(user, context, userAgent, ip);
 
-        Context active = contexts.getFirst();
-        LoginResult result = openSession(user, active, contexts, userAgent, ip);
-
-        auditService.recordAs(user.getId(), user.getOrgId(), active.actorType(),
+        auditService.recordAs(user.getId(), user.getOrgId(), context.actorType(),
                 AuditActions.LOGIN_SUCCEEDED, AuditActions.ENTITY_USER, user.getId(),
                 user.getOrgId(), Map.of("channel", channel.name()), ip);
         return result;
-    }
-
-    /**
-     * Switches a login that is both a business and a consumer to its other side.
-     * The current session ends and a new one starts, so a token always names exactly one context.
-     */
-    @Transactional
-    public LoginResult selectContext(UUID userId, ContextType contextType, String currentRefreshToken,
-                                     String userAgent, String ip) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new DomainException(ErrorCode.USER_NOT_FOUND));
-
-        List<Context> contexts = availableContexts(user);
-        Context target = contexts.stream()
-                .filter(context -> context.contextType() == contextType)
-                .findFirst()
-                .orElseThrow(() -> new DomainException(ErrorCode.AUTH_CONTEXT_INVALID));
-
-        if (currentRefreshToken != null) {
-            tokenService.revoke(currentRefreshToken);
-        }
-        return openSession(user, target, contexts, userAgent, ip);
     }
 
     /**
@@ -150,16 +134,17 @@ public class AuthService {
             throw new DomainException(ErrorCode.AUTH_USER_BLOCKED);
         }
 
-        List<Context> contexts = availableContexts(user);
-        Context active = contexts.stream()
-                .filter(context -> context.contextType() == rotated.contextType())
-                .findFirst()
-                .orElseThrow(() -> new DomainException(ErrorCode.AUTH_CONTEXT_INVALID));
+        Context context = resolveContext(user);
+        if (context.contextType() != rotated.contextType()) {
+            // The identity a user has is fixed at creation, so this only fires if data drifted
+            // under the token's feet — treat it as the token no longer being trustworthy.
+            throw new DomainException(ErrorCode.AUTH_TOKEN_INVALID);
+        }
 
-        JwtIssuer.AccessToken accessToken = jwtIssuer.issue(user.getId(), active.orgId(), active.actorType(),
-                active.contextType());
+        JwtIssuer.AccessToken accessToken = jwtIssuer.issue(user.getId(), context.orgId(), context.actorType(),
+                context.contextType());
         return new LoginResult(accessToken.value(), accessToken.expiresInSeconds(),
-                rotated.rawToken(), rotated.expiresAt(), active, contexts);
+                rotated.rawToken(), rotated.expiresAt(), context);
     }
 
     @Transactional
@@ -168,40 +153,43 @@ public class AuthService {
         auditService.recordAnonymous(AuditActions.LOGOUT, AuditActions.ENTITY_USER, userId, Map.of(), ip);
     }
 
-    private LoginResult openSession(User user, Context active, List<Context> contexts, String userAgent, String ip) {
+    private LoginResult openSession(User user, Context context, String userAgent, String ip) {
         TokenService.IssuedToken refreshToken =
-                tokenService.startSession(user.getId(), active.contextType(), userAgent, ip);
+                tokenService.startSession(user.getId(), context.contextType(), userAgent, ip);
         JwtIssuer.AccessToken accessToken =
-                jwtIssuer.issue(user.getId(), active.orgId(), active.actorType(), active.contextType());
+                jwtIssuer.issue(user.getId(), context.orgId(), context.actorType(), context.contextType());
 
         return new LoginResult(accessToken.value(), accessToken.expiresInSeconds(),
-                refreshToken.rawToken(), refreshToken.expiresAt(), active, contexts);
+                refreshToken.rawToken(), refreshToken.expiresAt(), context);
     }
 
     /**
-     * A login can act for its business, as a consumer, or both. A business whose organisation is
-     * suspended contributes nothing, which is how suspending a retailer locks them out without
-     * touching their user row.
+     * A login is a business or a consumer, never both, so this is a lookup, not a choice.
+     * A business whose organisation is suspended has no usable context, which is how suspending a
+     * retailer locks them out without touching their user row.
      */
-    /** Same view of contexts the login flow uses, exposed for the profile screen. */
     @Transactional(readOnly = true)
-    public List<Context> contextsFor(User user) {
-        return availableContexts(user);
+    public Context resolveContext(User user) {
+        if (user.getOrgId() != null) {
+            OrgDirectoryService.OrgSummary org = orgDirectory.find(user.getOrgId())
+                    .filter(o -> o.status() == OrgStatus.ACTIVE)
+                    .orElseThrow(() -> new DomainException(ErrorCode.ORG_NOT_ACTIVE));
+            return new Context(ContextType.ORG, org.id(), org.code(), org.displayName(), org.actorType());
+        }
+        return new Context(ContextType.CONSUMER, null, null, user.getFullName(), ActorType.CONSUMER);
     }
 
-    private List<Context> availableContexts(User user) {
-        List<Context> contexts = new ArrayList<>();
-
-        if (user.getOrgId() != null) {
-            orgDirectory.find(user.getOrgId())
-                    .filter(org -> org.status() == OrgStatus.ACTIVE)
-                    .ifPresent(org -> contexts.add(new Context(ContextType.ORG, org.id(), org.code(),
-                            org.displayName(), org.actorType())));
+    /**
+     * A safe label for audit rows: what kind of business this is, without also demanding that it
+     * be active. Deliberately not {@link #resolveContext}, which throws on a suspended organisation
+     * — that check belongs at login, not at "who is this for a log entry", or an OTP would stop
+     * being sent the moment a business is suspended instead of failing later at verification.
+     */
+    private ActorType actorTypeFor(User user) {
+        if (user.getOrgId() == null) {
+            return ActorType.CONSUMER;
         }
-        if (user.isConsumer()) {
-            contexts.add(new Context(ContextType.CONSUMER, null, null, user.getFullName(), ActorType.CONSUMER));
-        }
-        return contexts;
+        return orgDirectory.find(user.getOrgId()).map(OrgDirectoryService.OrgSummary::actorType).orElse(null);
     }
 
     private String normalize(OtpChannel channel, String destination) {
@@ -214,16 +202,12 @@ public class AuthService {
         return channel == OtpChannel.SMS ? Masking.phone(destination) : Masking.email(destination);
     }
 
-    /** One side a login may act as. */
+    /** The one identity a login has. */
     public record Context(ContextType contextType, UUID orgId, String orgCode, String displayName, ActorType actorType) {
     }
 
-    /** Everything the controller needs: the access token, the refresh token, and the context picture. */
-    public record LoginResult(String accessToken,
-                              long accessExpiresInSeconds,
-                              String refreshToken,
-                              Instant refreshExpiresAt,
-                              Context activeContext,
-                              List<Context> availableContexts) {
+    /** Everything the controller needs: the access token, the refresh token, and who the caller is. */
+    public record LoginResult(String accessToken, long accessExpiresInSeconds, String refreshToken,
+                              Instant refreshExpiresAt, Context context) {
     }
 }
